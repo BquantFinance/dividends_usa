@@ -397,6 +397,100 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     
     ticker_data = stock_metrics['data']
     
+    # Date Range Filter
+    st.markdown("#### 📅 Select Time Period")
+    
+    # Quick selection buttons
+    col_q1, col_q2, col_q3, col_q4, col_q5, col_q6 = st.columns(6)
+    
+    min_date = ticker_data['ex_dividend_date'].min().date()
+    max_date = ticker_data['ex_dividend_date'].max().date()
+    today = datetime.now().date()
+    
+    # Initialize session state for dates if not exists
+    if 'start_date' not in st.session_state:
+        st.session_state.start_date = min_date
+    if 'end_date' not in st.session_state:
+        st.session_state.end_date = max_date
+    
+    with col_q1:
+        if st.button("📅 1Y", use_container_width=True, help="Last 1 year"):
+            st.session_state.start_date = max(min_date, (today - timedelta(days=365)))
+            st.session_state.end_date = max_date
+    
+    with col_q2:
+        if st.button("📅 3Y", use_container_width=True, help="Last 3 years"):
+            st.session_state.start_date = max(min_date, (today - timedelta(days=365*3)))
+            st.session_state.end_date = max_date
+    
+    with col_q3:
+        if st.button("📅 5Y", use_container_width=True, help="Last 5 years"):
+            st.session_state.start_date = max(min_date, (today - timedelta(days=365*5)))
+            st.session_state.end_date = max_date
+    
+    with col_q4:
+        if st.button("📅 10Y", use_container_width=True, help="Last 10 years"):
+            st.session_state.start_date = max(min_date, (today - timedelta(days=365*10)))
+            st.session_state.end_date = max_date
+    
+    with col_q5:
+        if st.button("📅 YTD", use_container_width=True, help="Year to date"):
+            st.session_state.start_date = max(min_date, datetime(today.year, 1, 1).date())
+            st.session_state.end_date = max_date
+    
+    with col_q6:
+        if st.button("📅 ALL", use_container_width=True, help="Full history"):
+            st.session_state.start_date = min_date
+            st.session_state.end_date = max_date
+    
+    # Date inputs
+    col_date1, col_date2, col_date3 = st.columns([2, 2, 1])
+    
+    with col_date1:
+        start_date = st.date_input(
+            "Start Date",
+            value=st.session_state.start_date,
+            min_value=min_date,
+            max_value=max_date,
+            help="Filter dividend history from this date",
+            key='date_input_start'
+        )
+        st.session_state.start_date = start_date
+    
+    with col_date2:
+        end_date = st.date_input(
+            "End Date",
+            value=st.session_state.end_date,
+            min_value=min_date,
+            max_value=max_date,
+            help="Filter dividend history until this date",
+            key='date_input_end'
+        )
+        st.session_state.end_date = end_date
+    
+    # Filter data based on selected date range
+    ticker_data_filtered = ticker_data[
+        (ticker_data['ex_dividend_date'].dt.date >= start_date) & 
+        (ticker_data['ex_dividend_date'].dt.date <= end_date)
+    ].copy()
+    
+    if len(ticker_data_filtered) == 0:
+        st.warning("⚠️ No dividend payments in the selected date range. Please adjust your dates.")
+    else:
+        # Show filtered stats
+        st.markdown(f"""
+        <div style='padding: 10px; margin: 10px 0; background: rgba(0, 212, 255, 0.1); border-radius: 10px; border-left: 3px solid #00d4ff;'>
+            <p style='margin: 0; color: #a0b0c0;'>
+                📊 Showing <strong style='color: #00ff88;'>{len(ticker_data_filtered)}</strong> payments 
+                from <strong style='color: #00d4ff;'>{start_date.strftime('%Y-%m-%d')}</strong> 
+                to <strong style='color: #00d4ff;'>{end_date.strftime('%Y-%m-%d')}</strong>
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Use filtered data for chart
+    ticker_data_chart = ticker_data_filtered
+    
     fig = make_subplots(
         rows=2, cols=1,
         row_heights=[0.7, 0.3],
@@ -407,8 +501,8 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     
     fig.add_trace(
         go.Scatter(
-            x=ticker_data['ex_dividend_date'],
-            y=ticker_data['amount'],
+            x=ticker_data_chart['ex_dividend_date'],
+            y=ticker_data_chart['amount'],
             mode='lines+markers',
             name='Dividend Amount',
             line=dict(color='#00d4ff', width=3),
@@ -420,13 +514,13 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
         row=1, col=1
     )
     
-    if len(ticker_data) > 1:
-        z = np.polyfit(range(len(ticker_data)), ticker_data['amount'], 1)
+    if len(ticker_data_chart) > 1:
+        z = np.polyfit(range(len(ticker_data_chart)), ticker_data_chart['amount'], 1)
         p = np.poly1d(z)
         fig.add_trace(
             go.Scatter(
-                x=ticker_data['ex_dividend_date'],
-                y=p(range(len(ticker_data))),
+                x=ticker_data_chart['ex_dividend_date'],
+                y=p(range(len(ticker_data_chart))),
                 mode='lines',
                 name='Trend',
                 line=dict(color='#ff6b6b', width=2, dash='dash'),
@@ -435,7 +529,7 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
             row=1, col=1
         )
     
-    growth_data = ticker_data[ticker_data['pct_change'].notna()]
+    growth_data = ticker_data_chart[ticker_data_chart['pct_change'].notna()]
     colors = ['#00ff88' if x > 0 else '#ff6b6b' for x in growth_data['pct_change']]
     
     fig.add_trace(
@@ -481,23 +575,35 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     with col_left:
         st.markdown("### 💡 Dividend Insights")
         
-        avg_amount = ticker_data['amount'].mean()
-        median_amount = ticker_data['amount'].median()
-        volatility = ticker_data['amount'].std()
+        # Use filtered data for statistics
+        avg_amount = ticker_data_chart['amount'].mean()
+        median_amount = ticker_data_chart['amount'].median()
+        volatility = ticker_data_chart['amount'].std()
+        
+        # Calculate CAGR for filtered period if we have enough data
+        if len(ticker_data_chart) > 1:
+            first_amount = ticker_data_chart.iloc[0]['amount']
+            last_amount = ticker_data_chart.iloc[-1]['amount']
+            years_span = (ticker_data_chart.iloc[-1]['ex_dividend_date'] - ticker_data_chart.iloc[0]['ex_dividend_date']).days / 365.25
+            filtered_cagr = ((last_amount / first_amount) ** (1/years_span) - 1) * 100 if first_amount > 0 and years_span > 0 else 0
+            filtered_total = ticker_data_chart['amount'].sum()
+        else:
+            filtered_cagr = 0
+            filtered_total = ticker_data_chart['amount'].sum() if len(ticker_data_chart) > 0 else 0
         
         st.markdown(f"""
         <div class='stock-card'>
-            <h4 style='color: #00d4ff; margin-bottom: 15px;'>Statistical Analysis</h4>
+            <h4 style='color: #00d4ff; margin-bottom: 15px;'>Statistical Analysis (Filtered Period)</h4>
             <p>📊 <strong>Average Dividend:</strong> <span style='color: #00ff88;'>${avg_amount:.3f}</span></p>
             <p>📊 <strong>Median Dividend:</strong> <span style='color: #00ff88;'>${median_amount:.3f}</span></p>
             <p>📊 <strong>Volatility (Std Dev):</strong> <span style='color: #00ff88;'>${volatility:.3f}</span></p>
-            <p>📈 <strong>CAGR:</strong> <span style='color: #00ff88;'>{stock_metrics['cagr']:.2f}%</span></p>
-            <p>💰 <strong>Total Paid (History):</strong> <span style='color: #00ff88;'>${stock_metrics['total_paid']:.2f}</span></p>
+            <p>📈 <strong>CAGR:</strong> <span style='color: #00ff88;'>{filtered_cagr:.2f}%</span></p>
+            <p>💰 <strong>Total Paid (Period):</strong> <span style='color: #00ff88;'>${filtered_total:.2f}</span></p>
         </div>
         """, unsafe_allow_html=True)
         
         st.markdown("#### 📅 Payment Frequency Analysis")
-        yearly_counts = ticker_data.groupby('year').size()
+        yearly_counts = ticker_data_chart.groupby('year').size()
         
         fig_freq = go.Figure()
         fig_freq.add_trace(go.Bar(
@@ -524,53 +630,84 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     with col_right:
         st.markdown("### 📋 Recent Dividend History")
         
+        # Prepare data
         recent_payments = ticker_data.tail(12)[::-1][['ex_dividend_date', 'payout_date', 'amount', 'pct_change']].copy()
-        recent_payments['ex_dividend_date'] = recent_payments['ex_dividend_date'].dt.strftime('%Y-%m-%d')
-        recent_payments['payout_date'] = recent_payments['payout_date'].dt.strftime('%Y-%m-%d')
+        recent_payments.columns = ['Ex-Date', 'Pay Date', 'Amount', 'Growth %']
         
-        def format_growth(val):
+        # Format the dataframe for display
+        def color_growth(val):
+            """Color code growth values"""
             if pd.isna(val):
-                return '-'
+                return ''
             color = '#00ff88' if val > 0 else '#ff6b6b' if val < 0 else '#ffffff'
-            return f'<span style="color: {color}; font-weight: 600;">{val:.2f}%</span>'
+            return f'color: {color}; font-weight: 600'
         
-        recent_payments['amount_fmt'] = recent_payments['amount'].apply(lambda x: f'${x:.3f}')
-        recent_payments['growth_fmt'] = recent_payments['pct_change'].apply(format_growth)
+        # Style the dataframe
+        styled_df = recent_payments.style.format({
+            'Ex-Date': lambda x: x.strftime('%Y-%m-%d'),
+            'Pay Date': lambda x: x.strftime('%Y-%m-%d'),
+            'Amount': '${:.3f}',
+            'Growth %': lambda x: '-' if pd.isna(x) else f'{x:.2f}%'
+        }).applymap(color_growth, subset=['Growth %'])
         
-        table_html = "<div class='dataframe'><table style='width: 100%; border-collapse: collapse;'>"
-        table_html += """
-        <thead>
-            <tr style='background: rgba(0, 212, 255, 0.1); border-bottom: 2px solid #00d4ff;'>
-                <th style='padding: 12px; text-align: left; color: #a0b0c0;'>Ex-Date</th>
-                <th style='padding: 12px; text-align: left; color: #a0b0c0;'>Pay Date</th>
-                <th style='padding: 12px; text-align: right; color: #a0b0c0;'>Amount</th>
-                <th style='padding: 12px; text-align: right; color: #a0b0c0;'>Growth</th>
-            </tr>
-        </thead>
-        <tbody>
-        """
+        # Display with custom CSS
+        st.markdown("""
+        <style>
+        .dataframe {
+            font-size: 14px;
+        }
+        .dataframe th {
+            background: rgba(0, 212, 255, 0.1);
+            color: #a0b0c0;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #00d4ff;
+        }
+        .dataframe td {
+            padding: 10px;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
-        for _, row in recent_payments.iterrows():
-            table_html += f"""
-            <tr style='border-bottom: 1px solid rgba(128, 128, 128, 0.2);'>
-                <td style='padding: 10px; color: #ffffff;'>{row['ex_dividend_date']}</td>
-                <td style='padding: 10px; color: #ffffff;'>{row['payout_date']}</td>
-                <td style='padding: 10px; text-align: right; color: #00ff88; font-weight: 600;'>{row['amount_fmt']}</td>
-                <td style='padding: 10px; text-align: right;'>{row['growth_fmt']}</td>
-            </tr>
-            """
-        
-        table_html += "</tbody></table></div>"
-        st.markdown(table_html, unsafe_allow_html=True)
-        
-        csv = ticker_data.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Full History (CSV)",
-            data=csv,
-            file_name=f"{selected_ticker}_dividend_history.csv",
-            mime="text/csv",
-            use_container_width=True
+        st.dataframe(
+            recent_payments,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                'Ex-Date': st.column_config.DateColumn('Ex-Date', format='YYYY-MM-DD'),
+                'Pay Date': st.column_config.DateColumn('Pay Date', format='YYYY-MM-DD'),
+                'Amount': st.column_config.NumberColumn('Amount', format='$%.3f'),
+                'Growth %': st.column_config.NumberColumn('Growth %', format='%.2f%%')
+            }
         )
+        
+        st.markdown("")  # Add spacing
+        
+        # Download buttons
+        col_dl1, col_dl2 = st.columns(2)
+        
+        with col_dl1:
+            csv_full = ticker_data.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Full History",
+                data=csv_full,
+                file_name=f"{selected_ticker}_dividend_full_history.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help="Download complete dividend history"
+            )
+        
+        with col_dl2:
+            csv_filtered = ticker_data_chart.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Period",
+                data=csv_filtered,
+                file_name=f"{selected_ticker}_dividend_{start_date}_{end_date}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help="Download data for selected date range"
+            )
 
 # Footer with branding
 st.markdown("""
