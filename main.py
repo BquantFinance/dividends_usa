@@ -215,32 +215,48 @@ def get_sp500_data():
         tables = pd.read_html(StringIO(response.text))
         sp500_df = tables[0]
         
-        # Clean column names - the first table has the S&P 500 constituents
-        sp500_df.columns = sp500_df.columns.str.strip()
+        # Handle multi-level columns - flatten if needed
+        if isinstance(sp500_df.columns, pd.MultiIndex):
+            sp500_df.columns = [' '.join(col).strip() for col in sp500_df.columns.values]
         
-        # Map to standard names
-        column_mapping = {}
+        # Convert all column names to strings and clean them
+        sp500_df.columns = [str(col).strip() for col in sp500_df.columns]
+        
+        # Find the right columns by searching for keywords
+        ticker_col = None
+        company_col = None
+        sector_col = None
+        industry_col = None
+        
         for col in sp500_df.columns:
-            if 'Symbol' in col or 'Ticker' in col:
-                column_mapping[col] = 'ticker'
-            elif 'Security' in col or 'Company' in col:
-                column_mapping[col] = 'company'
-            elif 'GICS Sector' in col or 'Sector' in col:
-                column_mapping[col] = 'sector'
-            elif 'GICS Sub' in col or 'Sub-Industry' in col or 'Industry' in col:
-                column_mapping[col] = 'industry'
+            col_lower = col.lower()
+            if ticker_col is None and ('symbol' in col_lower or 'ticker' in col_lower):
+                ticker_col = col
+            elif company_col is None and ('security' in col_lower or 'company' in col_lower):
+                company_col = col
+            elif sector_col is None and 'sector' in col_lower and 'sub' not in col_lower:
+                sector_col = col
+            elif industry_col is None and ('sub' in col_lower or 'industry' in col_lower):
+                industry_col = col
         
-        sp500_df = sp500_df.rename(columns=column_mapping)
+        # Create result dataframe
+        result = pd.DataFrame()
+        if ticker_col:
+            result['ticker'] = sp500_df[ticker_col].astype(str).str.strip()
+        if company_col:
+            result['company'] = sp500_df[company_col].astype(str).str.strip()
+        if sector_col:
+            result['sector'] = sp500_df[sector_col].astype(str).str.strip()
+        if industry_col:
+            result['industry'] = sp500_df[industry_col].astype(str).str.strip()
         
-        # Keep only relevant columns
-        cols_to_keep = ['ticker', 'company', 'sector', 'industry']
-        sp500_df = sp500_df[[col for col in cols_to_keep if col in sp500_df.columns]]
+        # Remove any rows with missing ticker
+        if 'ticker' in result.columns:
+            result = result[result['ticker'].notna()]
+            result = result[result['ticker'] != 'nan']
+            result = result[result['ticker'] != '']
         
-        # Clean ticker symbols (remove any trailing characters)
-        if 'ticker' in sp500_df.columns:
-            sp500_df['ticker'] = sp500_df['ticker'].astype(str).str.strip()
-        
-        return sp500_df
+        return result
     except Exception as e:
         st.warning(f"Could not fetch S&P 500 data: {e}")
         return pd.DataFrame(columns=['ticker', 'company', 'sector', 'industry'])
@@ -265,12 +281,20 @@ def get_dividend_aristocrats():
         # Find the table with aristocrats (look for Symbol or Ticker column)
         aristocrats_set = set()
         for table in tables:
+            # Handle multi-level columns
+            if isinstance(table.columns, pd.MultiIndex):
+                table.columns = [' '.join(col).strip() for col in table.columns.values]
+            
+            # Convert columns to strings
+            table.columns = [str(col).strip() for col in table.columns]
+            
             # Check if table has ticker/symbol column
             for col in table.columns:
-                col_str = str(col).lower()
-                if 'symbol' in col_str or 'ticker' in col_str:
-                    tickers = table[col].dropna().astype(str).str.strip().tolist()
-                    aristocrats_set.update([t for t in tickers if t and t != 'nan' and len(t) <= 5])
+                col_lower = col.lower()
+                if 'symbol' in col_lower or 'ticker' in col_lower or 'stock' in col_lower:
+                    tickers = table[col].astype(str).str.strip().tolist()
+                    valid_tickers = [t for t in tickers if t and t != 'nan' and len(t) <= 5 and t.isalpha()]
+                    aristocrats_set.update(valid_tickers)
                     break
         
         return aristocrats_set
@@ -322,8 +346,16 @@ def enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df, sp500_df, aristocrats
     
     # Merge with S&P 500 data
     if 'ticker' in sp500_df.columns and len(sp500_df) > 0:
+        merge_cols = ['ticker']
+        if 'company' in sp500_df.columns:
+            merge_cols.append('company')
+        if 'sector' in sp500_df.columns:
+            merge_cols.append('sector')
+        if 'industry' in sp500_df.columns:
+            merge_cols.append('industry')
+        
         ticker_info = ticker_info.merge(
-            sp500_df[['ticker', 'company', 'sector', 'industry']], 
+            sp500_df[merge_cols], 
             on='ticker', 
             how='left'
         )
