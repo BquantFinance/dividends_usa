@@ -413,40 +413,58 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     if 'end_date' not in st.session_state:
         st.session_state.end_date = max_date
     
+    # DEBUG: Show current session state
+    st.markdown(f"""
+    <div style='background: rgba(255,0,0,0.1); padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;'>
+        🔍 <strong>DEBUG:</strong> Session state dates: {st.session_state.start_date} to {st.session_state.end_date}
+    </div>
+    """, unsafe_allow_html=True)
+    
     with col_q1:
-        if st.button("📅 1Y", use_container_width=True, help="Last 1 year"):
-            st.session_state.start_date = max(min_date, (today - timedelta(days=365)))
+        if st.button("📅 1Y", use_container_width=True, help="Last 1 year", key='btn_1y'):
+            new_start = max(min_date, (today - timedelta(days=365)))
+            st.session_state.start_date = new_start
             st.session_state.end_date = max_date
+            st.write(f"DEBUG: 1Y clicked, setting {new_start} to {max_date}")  # Temp debug
             st.rerun()
     
     with col_q2:
-        if st.button("📅 3Y", use_container_width=True, help="Last 3 years"):
-            st.session_state.start_date = max(min_date, (today - timedelta(days=365*3)))
+        if st.button("📅 3Y", use_container_width=True, help="Last 3 years", key='btn_3y'):
+            new_start = max(min_date, (today - timedelta(days=365*3)))
+            st.session_state.start_date = new_start
             st.session_state.end_date = max_date
+            st.write(f"DEBUG: 3Y clicked, setting {new_start} to {max_date}")  # Temp debug
             st.rerun()
     
     with col_q3:
-        if st.button("📅 5Y", use_container_width=True, help="Last 5 years"):
-            st.session_state.start_date = max(min_date, (today - timedelta(days=365*5)))
+        if st.button("📅 5Y", use_container_width=True, help="Last 5 years", key='btn_5y'):
+            new_start = max(min_date, (today - timedelta(days=365*5)))
+            st.session_state.start_date = new_start
             st.session_state.end_date = max_date
+            st.write(f"DEBUG: 5Y clicked, setting {new_start} to {max_date}")  # Temp debug
             st.rerun()
     
     with col_q4:
-        if st.button("📅 10Y", use_container_width=True, help="Last 10 years"):
-            st.session_state.start_date = max(min_date, (today - timedelta(days=365*10)))
+        if st.button("📅 10Y", use_container_width=True, help="Last 10 years", key='btn_10y'):
+            new_start = max(min_date, (today - timedelta(days=365*10)))
+            st.session_state.start_date = new_start
             st.session_state.end_date = max_date
+            st.write(f"DEBUG: 10Y clicked, setting {new_start} to {max_date}")  # Temp debug
             st.rerun()
     
     with col_q5:
-        if st.button("📅 YTD", use_container_width=True, help="Year to date"):
-            st.session_state.start_date = max(min_date, datetime(today.year, 1, 1).date())
+        if st.button("📅 YTD", use_container_width=True, help="Year to date", key='btn_ytd'):
+            new_start = max(min_date, datetime(today.year, 1, 1).date())
+            st.session_state.start_date = new_start
             st.session_state.end_date = max_date
+            st.write(f"DEBUG: YTD clicked, setting {new_start} to {max_date}")  # Temp debug
             st.rerun()
     
     with col_q6:
-        if st.button("📅 ALL", use_container_width=True, help="Full history"):
+        if st.button("📅 ALL", use_container_width=True, help="Full history", key='btn_all'):
             st.session_state.start_date = min_date
             st.session_state.end_date = max_date
+            st.write(f"DEBUG: ALL clicked, setting {min_date} to {max_date}")  # Temp debug
             st.rerun()
     
     # Date inputs
@@ -483,11 +501,25 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     start_date = st.session_state.start_date
     end_date = st.session_state.end_date
     
+    # DEBUG: Show what dates are being used for filtering
+    st.markdown(f"""
+    <div style='background: rgba(0,255,0,0.1); padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;'>
+        🔍 <strong>DEBUG:</strong> Using dates for filtering: {start_date} to {end_date}
+    </div>
+    """, unsafe_allow_html=True)
+    
     # Filter data based on selected date range
     ticker_data_filtered = ticker_data[
         (ticker_data['ex_dividend_date'].dt.date >= start_date) & 
         (ticker_data['ex_dividend_date'].dt.date <= end_date)
     ].copy()
+    
+    # DEBUG: Show filtering result
+    st.markdown(f"""
+    <div style='background: rgba(0,0,255,0.1); padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;'>
+        🔍 <strong>DEBUG:</strong> Filtered result: {len(ticker_data_filtered)} payments out of {len(ticker_data)} total
+    </div>
+    """, unsafe_allow_html=True)
     
     # ALWAYS set ticker_data_chart, even if empty
     ticker_data_chart = ticker_data_filtered
@@ -755,7 +787,7 @@ st.markdown("""
             <a href='https://bquantfinance.com' target='_blank' style='color: #00d4ff; text-decoration: none;'>bquantfinance.com</a>
         </p>
         <p style='font-size: 12px; margin-top: 10px; color: #505060;'>
-            Data updated: November 2025
+            Built with Streamlit & Plotly | Data updated: November 2025
         </p>
     </div>
 """.format(total=len(df), tickers=total_tickers, min_year=df['year'].min()), unsafe_allow_html=True)
