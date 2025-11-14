@@ -453,7 +453,7 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     col_date1, col_date2 = st.columns([2, 2])
     
     with col_date1:
-        start_date = st.date_input(
+        start_date_input = st.date_input(
             "Start Date",
             value=st.session_state.start_date,
             min_value=min_date,
@@ -461,13 +461,9 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
             help="Filter dividend history from this date",
             key='date_input_start'
         )
-        # Update session state when date input changes
-        if start_date != st.session_state.start_date:
-            st.session_state.start_date = start_date
-            st.rerun()
     
     with col_date2:
-        end_date = st.date_input(
+        end_date_input = st.date_input(
             "End Date",
             value=st.session_state.end_date,
             min_value=min_date,
@@ -475,12 +471,15 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
             help="Filter dividend history until this date",
             key='date_input_end'
         )
-        # Update session state when date input changes
-        if end_date != st.session_state.end_date:
-            st.session_state.end_date = end_date
-            st.rerun()
     
-    # Use session state values for filtering
+    # Only update session state if user manually changed the date inputs
+    # (not if they were updated by buttons)
+    if start_date_input != st.session_state.start_date:
+        st.session_state.start_date = start_date_input
+    if end_date_input != st.session_state.end_date:
+        st.session_state.end_date = end_date_input
+    
+    # Use session state values for filtering (these are the source of truth)
     start_date = st.session_state.start_date
     end_date = st.session_state.end_date
     
@@ -490,22 +489,23 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
         (ticker_data['ex_dividend_date'].dt.date <= end_date)
     ].copy()
     
+    # ALWAYS set ticker_data_chart, even if empty
+    ticker_data_chart = ticker_data_filtered
+    
     if len(ticker_data_filtered) == 0:
         st.warning("⚠️ No dividend payments in the selected date range. Please adjust your dates.")
-    else:
-        # Show filtered stats
-        st.markdown(f"""
-        <div style='padding: 10px; margin: 10px 0; background: rgba(0, 212, 255, 0.1); border-radius: 10px; border-left: 3px solid #00d4ff;'>
-            <p style='margin: 0; color: #a0b0c0;'>
-                📊 Showing <strong style='color: #00ff88;'>{len(ticker_data_filtered)}</strong> payments 
-                from <strong style='color: #00d4ff;'>{start_date.strftime('%Y-%m-%d')}</strong> 
-                to <strong style='color: #00d4ff;'>{end_date.strftime('%Y-%m-%d')}</strong>
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.stop()  # Stop execution if no data
     
-    # Use filtered data for chart
-    ticker_data_chart = ticker_data_filtered
+    # Show filtered stats
+    st.markdown(f"""
+    <div style='padding: 10px; margin: 10px 0; background: rgba(0, 212, 255, 0.1); border-radius: 10px; border-left: 3px solid #00d4ff;'>
+        <p style='margin: 0; color: #a0b0c0;'>
+            📊 Showing <strong style='color: #00ff88;'>{len(ticker_data_filtered)}</strong> payments 
+            from <strong style='color: #00d4ff;'>{start_date.strftime('%Y-%m-%d')}</strong> 
+            to <strong style='color: #00d4ff;'>{end_date.strftime('%Y-%m-%d')}</strong>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     fig = make_subplots(
         rows=2, cols=1,
@@ -653,10 +653,17 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
         # Show info about displayed vs total payments
         total_in_period = len(ticker_data_chart)
         showing = len(recent_payments)
-        if showing < total_in_period:
+        
+        # Show date range of the displayed data
+        if len(recent_payments) > 0:
+            first_shown = recent_payments.iloc[-1]['Ex-Date']  # Last in reversed list = earliest date
+            last_shown = recent_payments.iloc[0]['Ex-Date']    # First in reversed list = latest date
+            
             st.markdown(f"""
             <p style='color: #a0b0c0; font-size: 12px; margin-bottom: 10px;'>
-                Showing last {showing} of {total_in_period} payments in filtered period
+                Showing last <strong style='color: #00ff88;'>{showing}</strong> of <strong style='color: #00ff88;'>{total_in_period}</strong> payments in filtered period
+                <br>
+                <span style='color: #707070;'>Date range: {first_shown.strftime('%Y-%m-%d')} to {last_shown.strftime('%Y-%m-%d')}</span>
             </p>
             """, unsafe_allow_html=True)
         
@@ -700,6 +707,7 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
             recent_payments,
             hide_index=True,
             use_container_width=True,
+            key=f'recent_history_{start_date}_{end_date}_{len(recent_payments)}',
             column_config={
                 'Ex-Date': st.column_config.DateColumn('Ex-Date', format='YYYY-MM-DD'),
                 'Pay Date': st.column_config.DateColumn('Pay Date', format='YYYY-MM-DD'),
