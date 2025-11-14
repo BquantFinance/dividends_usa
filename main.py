@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 from plotly.subplots import make_subplots
+import os
 
 # Page configuration
 st.set_page_config(
@@ -67,7 +68,16 @@ st.markdown("""
 # Load data with caching
 @st.cache_data
 def load_data():
-    df = pd.read_csv('/mnt/user-data/uploads/all_usa_dividends_complete_20251114_1523.csv')
+    """Load data from CSV file in repository"""
+    # The CSV file is in the root of the repository
+    csv_filename = 'all_usa_dividends_complete_20251114_1523.csv'
+    
+    try:
+        df = pd.read_csv(csv_filename)
+    except FileNotFoundError:
+        st.error(f"❌ Could not find {csv_filename} in the repository")
+        st.stop()
+    
     df['ex_dividend_date'] = pd.to_datetime(df['ex_dividend_date'])
     df['payout_date'] = pd.to_datetime(df['payout_date'])
     df['year'] = df['ex_dividend_date'].dt.year
@@ -569,7 +579,7 @@ if selected_ticker:
     
     # Show recent dividend table
     st.markdown("#### Recent Dividend Payments")
-    recent_payments = ticker_data.tail(10)[::-1][['ex_dividend_date', 'payout_date', 'amount', 'pct_change']]
+    recent_payments = ticker_data.tail(10)[::-1][['ex_dividend_date', 'payout_date', 'amount', 'pct_change']].copy()
     recent_payments['ex_dividend_date'] = recent_payments['ex_dividend_date'].dt.strftime('%Y-%m-%d')
     recent_payments['payout_date'] = recent_payments['payout_date'].dt.strftime('%Y-%m-%d')
     recent_payments['amount'] = recent_payments['amount'].apply(lambda x: f'${x:.3f}')
