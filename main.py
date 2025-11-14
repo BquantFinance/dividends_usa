@@ -644,11 +644,21 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
         st.plotly_chart(fig_freq, use_container_width=True)
     
     with col_right:
-        st.markdown("### 📋 Recent Dividend History")
+        st.markdown("### 📋 Recent Dividend History (Filtered Period)")
         
-        # Prepare data
-        recent_payments = ticker_data.tail(12)[::-1][['ex_dividend_date', 'payout_date', 'amount', 'pct_change']].copy()
+        # Use filtered data and show up to last 12 payments from filtered period
+        recent_payments = ticker_data_chart.tail(12)[::-1][['ex_dividend_date', 'payout_date', 'amount', 'pct_change']].copy()
         recent_payments.columns = ['Ex-Date', 'Pay Date', 'Amount', 'Growth %']
+        
+        # Show info about displayed vs total payments
+        total_in_period = len(ticker_data_chart)
+        showing = len(recent_payments)
+        if showing < total_in_period:
+            st.markdown(f"""
+            <p style='color: #a0b0c0; font-size: 12px; margin-bottom: 10px;'>
+                Showing last {showing} of {total_in_period} payments in filtered period
+            </p>
+            """, unsafe_allow_html=True)
         
         # Format the dataframe for display
         def color_growth(val):
@@ -737,7 +747,7 @@ st.markdown("""
             <a href='https://bquantfinance.com' target='_blank' style='color: #00d4ff; text-decoration: none;'>bquantfinance.com</a>
         </p>
         <p style='font-size: 12px; margin-top: 10px; color: #505060;'>
-            Built with Streamlit & Plotly | Data updated: November 2025
+            Data updated: November 2025
         </p>
     </div>
 """.format(total=len(df), tickers=total_tickers, min_year=df['year'].min()), unsafe_allow_html=True)
