@@ -417,34 +417,40 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
         if st.button("📅 1Y", use_container_width=True, help="Last 1 year"):
             st.session_state.start_date = max(min_date, (today - timedelta(days=365)))
             st.session_state.end_date = max_date
+            st.rerun()
     
     with col_q2:
         if st.button("📅 3Y", use_container_width=True, help="Last 3 years"):
             st.session_state.start_date = max(min_date, (today - timedelta(days=365*3)))
             st.session_state.end_date = max_date
+            st.rerun()
     
     with col_q3:
         if st.button("📅 5Y", use_container_width=True, help="Last 5 years"):
             st.session_state.start_date = max(min_date, (today - timedelta(days=365*5)))
             st.session_state.end_date = max_date
+            st.rerun()
     
     with col_q4:
         if st.button("📅 10Y", use_container_width=True, help="Last 10 years"):
             st.session_state.start_date = max(min_date, (today - timedelta(days=365*10)))
             st.session_state.end_date = max_date
+            st.rerun()
     
     with col_q5:
         if st.button("📅 YTD", use_container_width=True, help="Year to date"):
             st.session_state.start_date = max(min_date, datetime(today.year, 1, 1).date())
             st.session_state.end_date = max_date
+            st.rerun()
     
     with col_q6:
         if st.button("📅 ALL", use_container_width=True, help="Full history"):
             st.session_state.start_date = min_date
             st.session_state.end_date = max_date
+            st.rerun()
     
     # Date inputs
-    col_date1, col_date2, col_date3 = st.columns([2, 2, 1])
+    col_date1, col_date2 = st.columns([2, 2])
     
     with col_date1:
         start_date = st.date_input(
@@ -455,7 +461,10 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
             help="Filter dividend history from this date",
             key='date_input_start'
         )
-        st.session_state.start_date = start_date
+        # Update session state when date input changes
+        if start_date != st.session_state.start_date:
+            st.session_state.start_date = start_date
+            st.rerun()
     
     with col_date2:
         end_date = st.date_input(
@@ -466,7 +475,14 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
             help="Filter dividend history until this date",
             key='date_input_end'
         )
-        st.session_state.end_date = end_date
+        # Update session state when date input changes
+        if end_date != st.session_state.end_date:
+            st.session_state.end_date = end_date
+            st.rerun()
+    
+    # Use session state values for filtering
+    start_date = st.session_state.start_date
+    end_date = st.session_state.end_date
     
     # Filter data based on selected date range
     ticker_data_filtered = ticker_data[
@@ -721,7 +737,7 @@ st.markdown("""
             <a href='https://bquantfinance.com' target='_blank' style='color: #00d4ff; text-decoration: none;'>bquantfinance.com</a>
         </p>
         <p style='font-size: 12px; margin-top: 10px; color: #505060;'>
-            Data updated: November 2025
+            Built with Streamlit & Plotly | Data updated: November 2025
         </p>
     </div>
 """.format(total=len(df), tickers=total_tickers, min_year=df['year'].min()), unsafe_allow_html=True)
