@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from plotly.subplots import make_subplots
 import ftplib
-from io import BytesIO
+from io import BytesIO, StringIO
 import requests
 
 # Page configuration
@@ -166,7 +166,8 @@ def get_nasdaq_tickers():
         
         ftp.close()
         return set(tickers)
-    except:
+    except Exception as e:
+        st.warning(f"Could not fetch NASDAQ tickers: {e}")
         return set()
 
 @st.cache_data(ttl=86400)
@@ -192,45 +193,89 @@ def get_nyse_amex_tickers():
         
         ftp.close()
         return tickers_df
-    except:
+    except Exception as e:
+        st.warning(f"Could not fetch NYSE/AMEX tickers: {e}")
         return pd.DataFrame(columns=['ticker', 'exchange'])
 
 @st.cache_data(ttl=86400)
 def get_sp500_data():
-    """Scrape S&P 500 companies from Wikipedia"""
+    """Scrape S&P 500 companies from Wikipedia with proper headers"""
     try:
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        tables = pd.read_html(url)
+        
+        # Use requests with user agent
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        # Parse HTML tables
+        tables = pd.read_html(StringIO(response.text))
         sp500_df = tables[0]
         
-        # Clean column names
-        sp500_df.columns = ['Symbol', 'Security', 'GICS_Sector', 'GICS_Sub_Industry', 
-                           'Headquarters', 'Date_Added', 'CIK', 'Founded']
+        # Clean column names - the first table has the S&P 500 constituents
+        sp500_df.columns = sp500_df.columns.str.strip()
         
-        sp500_df = sp500_df[['Symbol', 'Security', 'GICS_Sector', 'GICS_Sub_Industry']]
-        sp500_df.columns = ['ticker', 'company', 'sector', 'industry']
+        # Map to standard names
+        column_mapping = {}
+        for col in sp500_df.columns:
+            if 'Symbol' in col or 'Ticker' in col:
+                column_mapping[col] = 'ticker'
+            elif 'Security' in col or 'Company' in col:
+                column_mapping[col] = 'company'
+            elif 'GICS Sector' in col or 'Sector' in col:
+                column_mapping[col] = 'sector'
+            elif 'GICS Sub' in col or 'Sub-Industry' in col or 'Industry' in col:
+                column_mapping[col] = 'industry'
+        
+        sp500_df = sp500_df.rename(columns=column_mapping)
+        
+        # Keep only relevant columns
+        cols_to_keep = ['ticker', 'company', 'sector', 'industry']
+        sp500_df = sp500_df[[col for col in cols_to_keep if col in sp500_df.columns]]
+        
+        # Clean ticker symbols (remove any trailing characters)
+        if 'ticker' in sp500_df.columns:
+            sp500_df['ticker'] = sp500_df['ticker'].astype(str).str.strip()
         
         return sp500_df
-    except:
+    except Exception as e:
+        st.warning(f"Could not fetch S&P 500 data: {e}")
         return pd.DataFrame(columns=['ticker', 'company', 'sector', 'industry'])
 
 @st.cache_data(ttl=86400)
 def get_dividend_aristocrats():
-    """Scrape Dividend Aristocrats from Wikipedia"""
+    """Scrape Dividend Aristocrats from Wikipedia with proper headers"""
     try:
         url = "https://en.wikipedia.org/wiki/S%26P_500_Dividend_Aristocrats"
-        tables = pd.read_html(url)
         
-        # Find the table with aristocrats (usually the first one with tickers)
+        # Use requests with user agent
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        # Parse HTML tables
+        tables = pd.read_html(StringIO(response.text))
+        
+        # Find the table with aristocrats (look for Symbol or Ticker column)
+        aristocrats_set = set()
         for table in tables:
-            if 'Symbol' in table.columns or 'Ticker' in table.columns:
-                if 'Symbol' in table.columns:
-                    aristocrats = table['Symbol'].dropna().tolist()
-                else:
-                    aristocrats = table['Ticker'].dropna().tolist()
-                return set([str(t).strip() for t in aristocrats if str(t) != 'nan'])
-        return set()
-    except:
+            # Check if table has ticker/symbol column
+            for col in table.columns:
+                col_str = str(col).lower()
+                if 'symbol' in col_str or 'ticker' in col_str:
+                    tickers = table[col].dropna().astype(str).str.strip().tolist()
+                    aristocrats_set.update([t for t in tickers if t and t != 'nan' and len(t) <= 5])
+                    break
+        
+        return aristocrats_set
+    except Exception as e:
+        st.warning(f"Could not fetch Dividend Aristocrats: {e}")
         return set()
 
 @st.cache_data
@@ -254,9 +299,6 @@ def load_data():
 def enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df, sp500_df, aristocrats):
     """Enrich dividend data with exchange and index information"""
     
-    # Create enriched dataframe
-    enriched = df.copy()
-    
     # Add exchange information
     def get_exchange(ticker):
         if ticker in nasdaq_tickers:
@@ -275,15 +317,20 @@ def enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df, sp500_df, aristocrats
     ticker_info = pd.DataFrame({'ticker': unique_tickers})
     
     ticker_info['exchange'] = ticker_info['ticker'].apply(get_exchange)
-    ticker_info['is_sp500'] = ticker_info['ticker'].isin(sp500_df['ticker'])
+    ticker_info['is_sp500'] = ticker_info['ticker'].isin(sp500_df['ticker']) if 'ticker' in sp500_df.columns else False
     ticker_info['is_aristocrat'] = ticker_info['ticker'].isin(aristocrats)
     
     # Merge with S&P 500 data
-    ticker_info = ticker_info.merge(
-        sp500_df[['ticker', 'company', 'sector', 'industry']], 
-        on='ticker', 
-        how='left'
-    )
+    if 'ticker' in sp500_df.columns and len(sp500_df) > 0:
+        ticker_info = ticker_info.merge(
+            sp500_df[['ticker', 'company', 'sector', 'industry']], 
+            on='ticker', 
+            how='left'
+        )
+    else:
+        ticker_info['company'] = None
+        ticker_info['sector'] = None
+        ticker_info['industry'] = None
     
     return ticker_info
 
@@ -374,12 +421,12 @@ sp500_filter = st.sidebar.checkbox("S&P 500 Only", False, help="Show only S&P 50
 aristocrats_filter = st.sidebar.checkbox("Dividend Aristocrats Only", False, help="Show only Dividend Aristocrats (25+ years)")
 
 # Sector filter (only if S&P 500 selected)
-if sp500_filter:
-    sectors = ['All'] + sorted(sp500_df['sector'].dropna().unique().tolist())
+if sp500_filter and 'sector' in ticker_info.columns:
+    sectors = ['All'] + sorted(ticker_info['sector'].dropna().unique().tolist())
     selected_sector = st.sidebar.selectbox("Sector", sectors, help="Filter by GICS sector")
     
     if selected_sector != 'All':
-        industries = ['All'] + sorted(sp500_df[sp500_df['sector'] == selected_sector]['industry'].dropna().unique().tolist())
+        industries = ['All'] + sorted(ticker_info[ticker_info['sector'] == selected_sector]['industry'].dropna().unique().tolist())
         selected_industry = st.sidebar.selectbox("Industry", industries, help="Filter by GICS industry")
     else:
         selected_industry = 'All'
@@ -399,10 +446,10 @@ if sp500_filter:
 if aristocrats_filter:
     filtered_tickers = filtered_tickers[filtered_tickers['is_aristocrat'] == True]
 
-if selected_sector != 'All':
+if selected_sector != 'All' and 'sector' in filtered_tickers.columns:
     filtered_tickers = filtered_tickers[filtered_tickers['sector'] == selected_sector]
 
-if selected_industry != 'All':
+if selected_industry != 'All' and 'industry' in filtered_tickers.columns:
     filtered_tickers = filtered_tickers[filtered_tickers['industry'] == selected_industry]
 
 available_tickers = sorted(filtered_tickers['ticker'].tolist())
