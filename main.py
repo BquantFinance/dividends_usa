@@ -678,9 +678,26 @@ if selected_ticker and 'stock_metrics' in locals() and stock_metrics:
     with col_right:
         st.markdown("### 📋 Recent Dividend History (Filtered Period)")
         
+        # DEBUG: Verify ticker_data_chart is the right data
+        st.markdown(f"""
+        <div style='background: rgba(255,165,0,0.1); padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;'>
+            🔍 <strong>DEBUG TABLE:</strong> ticker_data_chart has {len(ticker_data_chart)} payments<br>
+            🔍 Date range in ticker_data_chart: {ticker_data_chart['ex_dividend_date'].min().strftime('%Y-%m-%d')} to {ticker_data_chart['ex_dividend_date'].max().strftime('%Y-%m-%d')}
+        </div>
+        """, unsafe_allow_html=True)
+        
         # Use filtered data and show up to last 12 payments from filtered period
         recent_payments = ticker_data_chart.tail(12)[::-1][['ex_dividend_date', 'payout_date', 'amount', 'pct_change']].copy()
         recent_payments.columns = ['Ex-Date', 'Pay Date', 'Amount', 'Growth %']
+        
+        # DEBUG: Verify recent_payments data
+        st.markdown(f"""
+        <div style='background: rgba(255,0,255,0.1); padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;'>
+            🔍 <strong>DEBUG TABLE:</strong> recent_payments has {len(recent_payments)} rows<br>
+            🔍 First row date: {recent_payments.iloc[0]['Ex-Date'].strftime('%Y-%m-%d') if len(recent_payments) > 0 else 'N/A'}<br>
+            🔍 Last row date: {recent_payments.iloc[-1]['Ex-Date'].strftime('%Y-%m-%d') if len(recent_payments) > 0 else 'N/A'}
+        </div>
+        """, unsafe_allow_html=True)
         
         # Show info about displayed vs total payments
         total_in_period = len(ticker_data_chart)
