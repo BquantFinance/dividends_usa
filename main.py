@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from plotly.subplots import make_subplots
 import ftplib
 from io import BytesIO, StringIO
-import requests
 
 # Page configuration
 st.set_page_config(
@@ -115,28 +114,6 @@ st.markdown("""
         margin: 10px 0;
     }
     
-    .aristocrat-badge {
-        background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
-        color: #000;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 700;
-        display: inline-block;
-        margin-left: 10px;
-    }
-    
-    .sp500-badge {
-        background: linear-gradient(135deg, #00d4ff 0%, #0088aa 100%);
-        color: #fff;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 700;
-        display: inline-block;
-        margin-left: 10px;
-    }
-    
     .footer {
         text-align: center;
         padding: 30px;
@@ -197,111 +174,6 @@ def get_nyse_amex_tickers():
         st.warning(f"Could not fetch NYSE/AMEX tickers: {e}")
         return pd.DataFrame(columns=['ticker', 'exchange'])
 
-@st.cache_data(ttl=86400)
-def get_sp500_data():
-    """Scrape S&P 500 companies from Wikipedia with proper headers"""
-    try:
-        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        
-        # Use requests with user agent
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        # Parse HTML tables
-        tables = pd.read_html(StringIO(response.text))
-        sp500_df = tables[0]
-        
-        # Handle multi-level columns - flatten if needed
-        if isinstance(sp500_df.columns, pd.MultiIndex):
-            sp500_df.columns = [' '.join(col).strip() for col in sp500_df.columns.values]
-        
-        # Convert all column names to strings and clean them
-        sp500_df.columns = [str(col).strip() for col in sp500_df.columns]
-        
-        # Find the right columns by searching for keywords
-        ticker_col = None
-        company_col = None
-        sector_col = None
-        industry_col = None
-        
-        for col in sp500_df.columns:
-            col_lower = col.lower()
-            if ticker_col is None and ('symbol' in col_lower or 'ticker' in col_lower):
-                ticker_col = col
-            elif company_col is None and ('security' in col_lower or 'company' in col_lower):
-                company_col = col
-            elif sector_col is None and 'sector' in col_lower and 'sub' not in col_lower:
-                sector_col = col
-            elif industry_col is None and ('sub' in col_lower or 'industry' in col_lower):
-                industry_col = col
-        
-        # Create result dataframe
-        result = pd.DataFrame()
-        if ticker_col:
-            result['ticker'] = sp500_df[ticker_col].astype(str).str.strip()
-        if company_col:
-            result['company'] = sp500_df[company_col].astype(str).str.strip()
-        if sector_col:
-            result['sector'] = sp500_df[sector_col].astype(str).str.strip()
-        if industry_col:
-            result['industry'] = sp500_df[industry_col].astype(str).str.strip()
-        
-        # Remove any rows with missing ticker
-        if 'ticker' in result.columns:
-            result = result[result['ticker'].notna()]
-            result = result[result['ticker'] != 'nan']
-            result = result[result['ticker'] != '']
-        
-        return result
-    except Exception as e:
-        st.warning(f"Could not fetch S&P 500 data: {e}")
-        return pd.DataFrame(columns=['ticker', 'company', 'sector', 'industry'])
-
-@st.cache_data(ttl=86400)
-def get_dividend_aristocrats():
-    """Scrape Dividend Aristocrats from Wikipedia with proper headers"""
-    try:
-        url = "https://en.wikipedia.org/wiki/S%26P_500_Dividend_Aristocrats"
-        
-        # Use requests with user agent
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        # Parse HTML tables
-        tables = pd.read_html(StringIO(response.text))
-        
-        # Find the table with aristocrats (look for Symbol or Ticker column)
-        aristocrats_set = set()
-        for table in tables:
-            # Handle multi-level columns
-            if isinstance(table.columns, pd.MultiIndex):
-                table.columns = [' '.join(col).strip() for col in table.columns.values]
-            
-            # Convert columns to strings
-            table.columns = [str(col).strip() for col in table.columns]
-            
-            # Check if table has ticker/symbol column
-            for col in table.columns:
-                col_lower = col.lower()
-                if 'symbol' in col_lower or 'ticker' in col_lower or 'stock' in col_lower:
-                    tickers = table[col].astype(str).str.strip().tolist()
-                    valid_tickers = [t for t in tickers if t and t != 'nan' and len(t) <= 5 and t.isalpha()]
-                    aristocrats_set.update(valid_tickers)
-                    break
-        
-        return aristocrats_set
-    except Exception as e:
-        st.warning(f"Could not fetch Dividend Aristocrats: {e}")
-        return set()
-
 @st.cache_data
 def load_data():
     """Load dividend data"""
@@ -320,8 +192,8 @@ def load_data():
     return df
 
 @st.cache_data
-def enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df, sp500_df, aristocrats):
-    """Enrich dividend data with exchange and index information"""
+def enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df):
+    """Enrich dividend data with exchange information"""
     
     # Add exchange information
     def get_exchange(ticker):
@@ -341,28 +213,6 @@ def enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df, sp500_df, aristocrats
     ticker_info = pd.DataFrame({'ticker': unique_tickers})
     
     ticker_info['exchange'] = ticker_info['ticker'].apply(get_exchange)
-    ticker_info['is_sp500'] = ticker_info['ticker'].isin(sp500_df['ticker']) if 'ticker' in sp500_df.columns else False
-    ticker_info['is_aristocrat'] = ticker_info['ticker'].isin(aristocrats)
-    
-    # Merge with S&P 500 data
-    if 'ticker' in sp500_df.columns and len(sp500_df) > 0:
-        merge_cols = ['ticker']
-        if 'company' in sp500_df.columns:
-            merge_cols.append('company')
-        if 'sector' in sp500_df.columns:
-            merge_cols.append('sector')
-        if 'industry' in sp500_df.columns:
-            merge_cols.append('industry')
-        
-        ticker_info = ticker_info.merge(
-            sp500_df[merge_cols], 
-            on='ticker', 
-            how='left'
-        )
-    else:
-        ticker_info['company'] = None
-        ticker_info['sector'] = None
-        ticker_info['industry'] = None
     
     return ticker_info
 
@@ -420,9 +270,7 @@ with st.spinner('🚀 Loading data...'):
     df = load_data()
     nasdaq_tickers = get_nasdaq_tickers()
     nyse_amex_df = get_nyse_amex_tickers()
-    sp500_df = get_sp500_data()
-    aristocrats = get_dividend_aristocrats()
-    ticker_info = enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df, sp500_df, aristocrats)
+    ticker_info = enrich_dividend_data(df, nasdaq_tickers, nyse_amex_df)
 
 # Header with branding
 st.markdown("""
@@ -446,43 +294,11 @@ st.sidebar.markdown("---")
 exchanges = ['All'] + sorted(ticker_info['exchange'].unique().tolist())
 selected_exchange = st.sidebar.selectbox("Exchange", exchanges, help="Filter by stock exchange")
 
-# S&P 500 filter
-sp500_filter = st.sidebar.checkbox("S&P 500 Only", False, help="Show only S&P 500 companies")
-
-# Aristocrats filter
-aristocrats_filter = st.sidebar.checkbox("Dividend Aristocrats Only", False, help="Show only Dividend Aristocrats (25+ years)")
-
-# Sector filter (only if S&P 500 selected)
-if sp500_filter and 'sector' in ticker_info.columns:
-    sectors = ['All'] + sorted(ticker_info['sector'].dropna().unique().tolist())
-    selected_sector = st.sidebar.selectbox("Sector", sectors, help="Filter by GICS sector")
-    
-    if selected_sector != 'All':
-        industries = ['All'] + sorted(ticker_info[ticker_info['sector'] == selected_sector]['industry'].dropna().unique().tolist())
-        selected_industry = st.sidebar.selectbox("Industry", industries, help="Filter by GICS industry")
-    else:
-        selected_industry = 'All'
-else:
-    selected_sector = 'All'
-    selected_industry = 'All'
-
 # Apply filters
 filtered_tickers = ticker_info.copy()
 
 if selected_exchange != 'All':
     filtered_tickers = filtered_tickers[filtered_tickers['exchange'] == selected_exchange]
-
-if sp500_filter:
-    filtered_tickers = filtered_tickers[filtered_tickers['is_sp500'] == True]
-
-if aristocrats_filter:
-    filtered_tickers = filtered_tickers[filtered_tickers['is_aristocrat'] == True]
-
-if selected_sector != 'All' and 'sector' in filtered_tickers.columns:
-    filtered_tickers = filtered_tickers[filtered_tickers['sector'] == selected_sector]
-
-if selected_industry != 'All' and 'industry' in filtered_tickers.columns:
-    filtered_tickers = filtered_tickers[filtered_tickers['industry'] == selected_industry]
 
 available_tickers = sorted(filtered_tickers['ticker'].tolist())
 
@@ -492,8 +308,6 @@ st.sidebar.markdown("### 📊 Filtered Stats")
 st.sidebar.markdown(f"""
 <div class='highlight-card'>
     <p>📈 <strong>Stocks:</strong> {len(available_tickers):,}</p>
-    <p>💰 <strong>S&P 500:</strong> {filtered_tickers['is_sp500'].sum()}</p>
-    <p>👑 <strong>Aristocrats:</strong> {filtered_tickers['is_aristocrat'].sum()}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -501,16 +315,12 @@ st.sidebar.markdown(f"""
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎯 Database Overview")
 total_tickers = df['ticker'].nunique()
-total_sp500 = ticker_info['is_sp500'].sum()
-total_aristocrats = ticker_info['is_aristocrat'].sum()
 
 st.sidebar.markdown(f"""
 <div class='highlight-card'>
     <p>📊 <strong>Total Stocks:</strong> {total_tickers:,}</p>
     <p>💰 <strong>Total Payments:</strong> {len(df):,}</p>
     <p>📅 <strong>Date Range:</strong> {df['year'].min()}-{df['year'].max()}</p>
-    <p>🏢 <strong>S&P 500:</strong> {total_sp500}</p>
-    <p>👑 <strong>Aristocrats:</strong> {total_aristocrats}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -545,20 +355,11 @@ with col_search2:
         ticker_meta = ticker_info[ticker_info['ticker'] == selected_ticker].iloc[0]
         
         if stock_metrics:
-            badges = ""
-            if ticker_meta['is_sp500']:
-                badges += "<span class='sp500-badge'>S&P 500</span>"
-            if ticker_meta['is_aristocrat']:
-                badges += "<span class='aristocrat-badge'>👑 ARISTOCRAT</span>"
-            
-            st.markdown(f"### 📌 {selected_ticker} {badges}", unsafe_allow_html=True)
+            st.markdown(f"### 📌 {selected_ticker}", unsafe_allow_html=True)
             
             company_info = f"<p style='color: #a0b0c0;'>"
             company_info += f"<strong>Exchange:</strong> {ticker_meta['exchange']} | "
             company_info += f"Latest: <span style='color: #00ff88; font-size: 24px; font-weight: 700;'>${stock_metrics['latest_amount']:.3f}</span></p>"
-            
-            if pd.notna(ticker_meta.get('sector')):
-                company_info += f"<p style='color: #909090; font-size: 12px;'>{ticker_meta['sector']} - {ticker_meta['industry']}</p>"
             
             st.markdown(company_info, unsafe_allow_html=True)
 
@@ -783,7 +584,7 @@ st.markdown("""
             <a href='https://bquantfinance.com' target='_blank' style='color: #00d4ff; text-decoration: none;'>bquantfinance.com</a>
         </p>
         <p style='font-size: 12px; margin-top: 10px; color: #505060;'>
-            Built with Streamlit & Plotly | Data updated: November 2025
+            Data updated: November 2025
         </p>
     </div>
 """.format(total=len(df), tickers=total_tickers, min_year=df['year'].min()), unsafe_allow_html=True)
